@@ -1,11 +1,8 @@
 name: Build SideStore iOS IPA
-
 on:
   workflow_dispatch:
-
 permissions:
   contents: read
-
 jobs:
   build-ios:
     name: Build full-source unsigned IPA
@@ -14,25 +11,21 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version-file: native/go.mod
           cache-dependency-path: native/go.sum
-
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.47.4'
           channel: stable
           cache: true
-
       - name: Set up CocoaPods
         shell: bash
         run: |
@@ -43,13 +36,26 @@ jobs:
           xcodebuild -version
           flutter --version
           pod --version
-
       - name: Resolve Flutter dependencies
         run: flutter pub get
-
       - name: Build full-source unsigned IPA
         run: python3 scripts/build_ios.py --all-sources
-
+      - name: Normalize IPA Payload layout
+        shell: bash
+        run: |
+          set -euo pipefail
+          ipa="$(find dist/ios -maxdepth 1 -type f -name '*.ipa' -print -quit)"
+          test -n "$ipa"
+          stage="$(mktemp -d)"
+          trap 'rm -rf "$stage"' EXIT
+          unzip -q "$ipa" -d "$stage"
+          if [ -d "$stage/Runner.app" ]; then
+            mkdir -p "$stage/Payload"
+            mv "$stage/Runner.app" "$stage/Payload/Runner.app"
+          fi
+          test -d "$stage/Payload/Runner.app"
+          (cd "$stage" && zip -qry -y "$RUNNER_TEMP/fixed.ipa" Payload)
+          mv "$RUNNER_TEMP/fixed.ipa" "$ipa"
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
